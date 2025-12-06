@@ -26,32 +26,70 @@ def list_available_models():
 
         if result.returncode == 0 and result.stdout.strip():
             output_lines = result.stdout.splitlines()
-            models = []
+            all_model_aliases = []
 
-            # Parse the table output from foundry model list
-            # Skip header lines and process data lines
+            # First, extract all model aliases from the list
             for line in output_lines:
                 line = line.strip()
                 if not line or line.startswith('Alias') or line.startswith('-'):
                     continue
 
-                # Parse model lines - they have format: name, device, task, size, license, model_id
                 parts = line.split()
-                if len(parts) >= 6:
-                    model_id = parts[0]  # First column is the alias/model name
-                    device = parts[1] if len(parts) > 1 else "CPU"
-                    task = parts[2] if len(parts) > 2 else "chat"
+                if len(parts) >= 1:
+                    first_part = parts[0]
+                    # If first part is not empty and not CPU/GPU, it's a model alias
+                    if first_part and first_part not in ['CPU', 'GPU']:
+                        all_model_aliases.append(first_part)
 
-                    models.append({
-                        "id": model_id,
-                        "name": model_id,
-                        "type": "text",
-                        "device": device,
-                        "task": task,
-                        "description": f"Model {model_id} ({device})"
-                    })
+            print(f"Found {len(all_model_aliases)} model aliases, checking which are downloaded...")
 
-            print(f"Foundry CLI returned {len(models)} models")
+            # Now check which models are actually downloaded by trying to get their info
+            models = []
+            for alias in all_model_aliases:
+                try:
+                    # Try to get model info - if it succeeds, the model is downloaded
+                    info_result = subprocess.run(
+                        ["foundry", "model", "info", alias],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+
+                    if info_result.returncode == 0 and info_result.stdout.strip():
+                        # Parse the info output
+                        info_lines = info_result.stdout.splitlines()
+                        if len(info_lines) >= 2:  # Should have at least header + data
+                            # Parse the info line (similar format to list)
+                            for info_line in info_lines[1:]:  # Skip header
+                                info_line = info_line.strip()
+                                if info_line:
+                                    parts = info_line.split()
+                                    if len(parts) >= 6:
+                                        model_name = parts[0]
+                                        device = parts[1]
+                                        task = parts[2]
+                                        file_size = parts[3] + ' ' + parts[4] if len(parts) > 4 else 'Unknown'
+                                        license = parts[5] if len(parts) > 5 else 'Unknown'
+                                        model_id = parts[-1] if len(parts) > 6 else alias
+
+                                        models.append({
+                                            "id": alias,
+                                            "name": model_name,
+                                            "type": "text",
+                                            "device": device,
+                                            "task": task,
+                                            "file_size": file_size,
+                                            "license": license,
+                                            "model_id": model_id,
+                                            "description": f"Downloaded model {model_name} ({device}) - {file_size}"
+                                        })
+                                        break  # Only take the first info line
+
+                except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                    # Model info failed, skip this model (not downloaded)
+                    continue
+
+            print(f"Found {len(models)} downloaded models")
 
             # Update our database with foundry models
             for model_data in models:
