@@ -1,0 +1,13 @@
+flask
+flask-sqlalchemy
+flask-migrate
+flask-cors
+requests
+pandas
+numpy
+pytest
+gunicorn
+psycopg2-binary
+python-dotenv
+werkzeug
+bcrypt
