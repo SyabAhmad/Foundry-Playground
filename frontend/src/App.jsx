@@ -11,6 +11,8 @@ function App() {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [models, setModels] = useState([]);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [allModels, setAllModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
@@ -22,25 +24,81 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/models`);
       const data = await response.json();
       console.log("Models response:", data);
-
+      // Handle both OpenAI format and our custom format
+      let modelsList = [];
       if (data.success && data.models) {
-        // Handle both OpenAI format and our custom format
-        let modelsList = data.models;
+        modelsList = data.models;
         if (data.source === "foundry_local" && Array.isArray(data.models)) {
           // Already in the right format
           modelsList = data.models;
         }
 
         console.log("Setting models:", modelsList);
+        // set raw models as returned (we'll normalize later)
         setModels(modelsList);
         if (modelsList.length > 0 && !selectedModel) {
           const firstModel = modelsList[0].id || modelsList[0];
           console.log("Setting selected model:", firstModel);
-          setSelectedModel(firstModel);
+          setSelectedModel((firstModel || '').toString().replace(/:/g, '-'));
         }
       } else {
         console.log("No models in response or success=false");
       }
+      // Fetch available remote models (pullable)
+      try {
+        const pullResponse = await fetch(`${API_BASE_URL}/models/pull`);
+        const pullData = await pullResponse.json();
+        if (pullData.success && Array.isArray(pullData.models)) {
+          // Exclude models that are already downloaded
+          const downloadedIds = (modelsList || []).map((m) => {
+            const id = m.id || m.name || m;
+            // Normalize both colon and dash suffixes for comparison
+            return (id || '').toString().replace(/:/g, '-');
+          });
+          console.log('Downloaded IDs (normalized):', downloadedIds);
+          console.log('Available raw:', pullData.models.map(m => (m.id || m.name || m || '')));
+          const filtered = pullData.models.filter((m) => {
+            const id = (m.id || m.name || m || '').toString();
+            const normalized = id.replace(/:/g, '-');
+            return !downloadedIds.includes(normalized);
+          });
+          console.log('Available filtered:', filtered.map(m => (m.id || m.name || m || '')));
+          setAvailableModels(filtered);
+          // If no downloaded models and none selected, set selected model from available
+          if ((!modelsList || modelsList.length === 0) && pullData.models.length > 0 && !selectedModel) {
+            setSelectedModel(pullData.models[0].id || pullData.models[0]);
+          }
+        } else {
+          setAvailableModels([]);
+        }
+      } catch (err) {
+        console.error("Error fetching available models:", err);
+        setAvailableModels([]);
+      }
+      // Fetch ALL models legacy (unfiltered) via /models/all
+      try {
+        const allRes = await fetch(`${API_BASE_URL}/models/all`);
+        const allData = await allRes.json();
+        if (allData.success && Array.isArray(allData.models)) {
+          setAllModels(allData.models.map(m => ({
+            ...(typeof m === 'string' ? { id: m, name: m } : m),
+            id: ((typeof m === 'string' ? m : (m.id || m.name || '')) || '').replace(/:/g, '-')
+          })));
+        } else {
+          setAllModels([]);
+        }
+      } catch (err) {
+        console.error('Error fetching all models:', err);
+        setAllModels([]);
+      }
+      // Also normalize models stored in App state (convert strings into objects and normalize ID)
+      const normalizedModels = (modelsList || []).map(m => ({
+        ...(typeof m === 'string' ? { id: m, name: m } : m),
+        id: ((typeof m === 'string' ? m : (m.id || m.name || '')) || '').toString().replace(/:/g, '-')
+      }));
+      setModels(normalizedModels);
+      console.log('Normalized models:', normalizedModels.map(m => m.id));
+      console.log('Available models:', availableModels);
     } catch (error) {
       console.error("Error fetching models:", error);
     }
@@ -402,7 +460,9 @@ function App() {
       />
 
       <RightSidebar
-        models={models}
+        downloadedModels={models}
+        availableModels={availableModels}
+        allModels={allModels}
         selectedModel={selectedModel}
         onModelSelect={setSelectedModel}
         showSidebar={showRightSidebar}

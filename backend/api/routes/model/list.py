@@ -24,72 +24,85 @@ def list_available_models():
         print(f"CLI stdout: {result.stdout[:200]}...")
         print(f"CLI stderr: {result.stderr[:200]}...")
 
-        if result.returncode == 0 and result.stdout.strip():
-            output_lines = result.stdout.splitlines()
-            all_model_aliases = []
+        if result.returncode == 0:
+            # Instead of parsing the CLI output, check the actual cache directory
+            import os
+            import platform
 
-            # First, extract all model aliases from the list
-            for line in output_lines:
-                line = line.strip()
-                if not line or line.startswith('Alias') or line.startswith('-'):
-                    continue
+            # Get the Foundry cache directory - models are in cache/models/Microsoft/
+            home_dir = os.path.expanduser('~')
+            if platform.system() == 'Windows':
+                cache_dir = os.path.join(home_dir, '.foundry', 'cache', 'models', 'Microsoft')
+            else:
+                cache_dir = os.path.join(home_dir, '.foundry', 'cache', 'models', 'Microsoft')
 
-                parts = line.split()
-                if len(parts) >= 1:
-                    first_part = parts[0]
-                    # If first part is not empty and not CPU/GPU, it's a model alias
-                    if first_part and first_part not in ['CPU', 'GPU']:
-                        all_model_aliases.append(first_part)
+            print(f"Checking cache directory: {cache_dir}")
 
-            print(f"Found {len(all_model_aliases)} model aliases, checking which are downloaded...")
-
-            # Now check which models are actually downloaded by trying to get their info
             models = []
-            for alias in all_model_aliases:
+            if os.path.exists(cache_dir):
                 try:
-                    # Try to get model info - if it succeeds, the model is downloaded
-                    info_result = subprocess.run(
-                        ["foundry", "model", "info", alias],
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
+                    # List all subdirectories in cache/models/Microsoft (these are downloaded models)
+                        for item in os.listdir(cache_dir):
+                            item_path = os.path.join(cache_dir, item)
+                            if not os.path.isdir(item_path):
+                                continue
+                            # Check if this looks like a model directory (has files)
+                            try:
+                                if not os.listdir(item_path):
+                                    # empty directory - skip
+                                    continue
+                            except PermissionError:
+                                # Skip directories we can't read
+                                continue
 
-                    if info_result.returncode == 0 and info_result.stdout.strip():
-                        # Parse the info output
-                        info_lines = info_result.stdout.splitlines()
-                        if len(info_lines) >= 2:  # Should have at least header + data
-                            # Parse the info line (similar format to list)
-                            for info_line in info_lines[1:]:  # Skip header
-                                info_line = info_line.strip()
-                                if info_line:
-                                    parts = info_line.split()
-                                    if len(parts) >= 6:
-                                        model_name = parts[0]
-                                        device = parts[1]
-                                        task = parts[2]
-                                        file_size = parts[3] + ' ' + parts[4] if len(parts) > 4 else 'Unknown'
-                                        license = parts[5] if len(parts) > 5 else 'Unknown'
-                                        model_id = parts[-1] if len(parts) > 6 else alias
+                            model_id = item  # Preserve the directory name as the model id
+                            print(f"Processing cached model: {model_id}")
+                            try:
+                                # Parse model info from directory name
+                                # Format: model-name-generic-device-version
+                                if '-generic-' in model_id:
+                                    parts = model_id.split('-generic-')
+                                    model_base = parts[0]
+                                    device_version = parts[1]  # e.g., "cpu-4"
 
-                                        models.append({
-                                            "id": alias,
-                                            "name": model_name,
-                                            "type": "text",
-                                            "device": device,
-                                            "task": task,
-                                            "file_size": file_size,
-                                            "license": license,
-                                            "model_id": model_id,
-                                            "description": f"Downloaded model {model_name} ({device}) - {file_size}"
-                                        })
-                                        break  # Only take the first info line
+                                    device_parts = device_version.split('-')
+                                    device = device_parts[0].upper() if device_parts else "CPU"
 
-                except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
-                    # Model info failed, skip this model (not downloaded)
-                    continue
+                                    models.append({
+                                        # Use the full directory name for ID (keeps device/version): e.g. qwen2.5-1.5b-instruct-generic-cpu-4
+                                        "id": model_id,
+                                        # use model base for display name
+                                        "name": model_base,
+                                        "type": "text",
+                                        "device": device,
+                                        "task": "chat",
+                                        "file_size": "Cached",
+                                        "description": f"Cached model {model_base} ({device})"
+                                    })
+                                    print(f"Added cached model: {model_id} (base {model_base})")
+                                else:
+                                    # Fallback: use the full directory name
+                                    models.append({
+                                        # keep ID same as directory name
+                                        "id": model_id,
+                                        "name": model_id,
+                                        "type": "text",
+                                        "device": "CPU",
+                                        "task": "chat",
+                                        "file_size": "Cached",
+                                        "description": f"Cached model {model_id}"
+                                    })
+                                    print(f"Added cached model (fallback): {model_id}")
 
-            print(f"Found {len(models)} downloaded models")
+                            except Exception as e:
+                                print(f"Error processing cached model {model_id}: {e}")
+                                import traceback
+                                traceback.print_exc()
+
+                except Exception as e:
+                    print(f"Error checking cache directory: {e}")
+
+            print(f"Found {len(models)} cached/downloaded models")
 
             # Update our database with foundry models
             for model_data in models:
@@ -173,7 +186,7 @@ def list_available_models():
             'message': str(e)
         }), 500
 
-@bp.route('/<model_id>', methods=['GET'])
+@bp.route('/models/<model_id>', methods=['GET'])
 def get_model_details(model_id):
     """Get detailed information about a specific model"""
     try:

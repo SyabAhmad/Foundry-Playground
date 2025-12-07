@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 
 const RightSidebar = ({
-  models,
+  downloadedModels = [],
+  availableModels = [],
+  allModels = [],
   selectedModel,
   onModelSelect,
   showSidebar,
@@ -13,12 +15,6 @@ const RightSidebar = ({
   if (!showSidebar) return null;
 
   // For demo purposes, split models into downloaded and available
-  const downloadedModels = models.filter(
-    (_, index) => index < Math.ceil(models.length / 2)
-  );
-  const availableModels = models.filter(
-    (_, index) => index >= Math.ceil(models.length / 2)
-  );
 
   return (
     <div className="sidebar right-sidebar">
@@ -62,7 +58,7 @@ const RightSidebar = ({
                 onChange={(e) => onModelSelect(e.target.value)}
                 className="model-select"
               >
-                {models.map((model, index) => (
+                {downloadedModels.map((model, index) => (
                   <option key={index} value={model.id || model.name || model}>
                     {model.name || model.id || model}
                   </option>
@@ -144,6 +140,32 @@ const RightSidebar = ({
                 ))
               ) : (
                 <p className="no-models">No additional models available</p>
+              )}
+            </div>
+          </div>
+          {/* All Models (complete catalog) */}
+          <div className="sidebar-section">
+            <h3>All Models ({allModels.length})</h3>
+            <div className="models-list">
+              {allModels.length > 0 ? (
+                allModels.map((model, index) => (
+                  <div key={index} className="model-item available">
+                    <div className="model-info">
+                      <div className="model-name">{model.name || model.id || model}</div>
+                      <div className="model-type">{model.type || "text"}</div>
+                      <div className="model-size">{model.file_size || ""}</div>
+                    </div>
+                    <button
+                      className="download-btn"
+                      onClick={() => onPullModel && onPullModel(model.id || model.name || model)}
+                      title="Download model"
+                    >
+                      ⬇️
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="no-models">No catalog models available</p>
               )}
             </div>
           </div>
