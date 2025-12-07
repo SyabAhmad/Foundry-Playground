@@ -151,13 +151,18 @@ const RightSidebar = ({
                 allModels.map((model, index) => (
                   <div key={index} className="model-item available">
                     <div className="model-info">
-                      <div className="model-name">{model.name || model.id || model}</div>
+                      <div className="model-name">
+                        {model.name || model.id || model}
+                      </div>
                       <div className="model-type">{model.type || "text"}</div>
                       <div className="model-size">{model.file_size || ""}</div>
                     </div>
                     <button
                       className="download-btn"
-                      onClick={() => onPullModel && onPullModel(model.id || model.name || model)}
+                      onClick={() =>
+                        onPullModel &&
+                        onPullModel(model.id || model.name || model)
+                      }
                       title="Download model"
                     >
                       ⬇️
