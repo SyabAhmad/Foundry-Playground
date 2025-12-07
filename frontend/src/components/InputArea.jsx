@@ -29,7 +29,7 @@ const InputArea = ({
           {isLoading ? "..." : "→"}
         </button>
       </div>
-      <div className="input-footer">
+      {/* <div className="input-footer">
         <select
           value={selectedModel}
           onChange={(e) => onModelChange(e.target.value)}
@@ -41,6 +41,16 @@ const InputArea = ({
             </option>
           ))}
         </select>
+      </div> */}
+      <div
+        style={{
+          textAlign: "center",
+          fontSize: "0.7rem",
+          color: "#aaa",
+          marginTop: "8px",
+        }}
+      >
+        ©2025 <a href="http://syab.tech/mentee">MenteE™</a> All rights reserved.
       </div>
     </div>
   );

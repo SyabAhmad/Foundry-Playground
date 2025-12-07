@@ -24,6 +24,10 @@ export async function getPullableModels() {
   return _fetch("/models/pull");
 }
 
+export async function getRunningModels() {
+  return _fetch("/models/running");
+}
+
 export async function getAllModels() {
   return _fetch("/models/all");
 }
@@ -113,6 +117,7 @@ export async function generateEmbeddings(payload) {
 export default {
   getModels,
   getPullableModels,
+  getRunningModels,
   getAllModels,
   pullModel,
   stopModel,

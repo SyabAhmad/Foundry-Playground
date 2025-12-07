@@ -3,6 +3,7 @@ import React, { useState } from "react";
 const RightSidebar = ({
   downloadedModels = [],
   availableModels = [],
+  runningModels = [],
   allModels = [],
   selectedModel,
   onModelSelect,
@@ -91,7 +92,23 @@ const RightSidebar = ({
                       <div className="model-type">{model.type || "text"}</div>
                     </div>
                     <div className="model-status">
-                      <span className="status-dot online"></span>
+                      <span
+                        className={`status-dot ${
+                          (runningModels || []).some(
+                            (r) =>
+                              ((r.id || r.rawId || r.name || "") + "").replace(
+                                /:/g,
+                                "-"
+                              ) ===
+                              ((model.id || model.name || model) + "").replace(
+                                /:/g,
+                                "-"
+                              )
+                          )
+                            ? "online"
+                            : "offline"
+                        }`}
+                      ></span>
                       <button
                         className="model-action-btn"
                         onClick={(e) => {

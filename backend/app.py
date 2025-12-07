@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from models import db
 from api.routes import models, generate, chat, embeddings, conversations
 from api.routes.model.list import bp as list_models
-from api.routes.model.pull import bp as pull_model
+from api.routes.model.pull_clean import bp as pull_model
 from api.routes.model.stop import bp as stop_model
 from api.routes.train.start import bp as start_training
 from api.routes.train.status import bp as training_status
@@ -68,7 +68,7 @@ def index():
 def health():
     try:
         # Check if Foundry Local is running
-        response = requests.get(f'{FOUNDRY_BASE_URL}/health', timeout=5)
+        response = requests.get(f"{app.config.get('FOUNDRY_BASE_URL')}/health", timeout=5)
         return jsonify({
             'status': 'healthy',
             'foundry_status': response.json() if response.status_code == 200 else 'unknown'

@@ -105,6 +105,7 @@ def send_message(conversation_id):
             model=model
         )
         db.session.add(user_msg)
+        db.session.commit()  # persist the user message before calling Foundry
 
         # Get conversation history for context
         messages = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at).all()
@@ -115,6 +116,15 @@ def send_message(conversation_id):
 
         # Call Foundry Local API using OpenAI-compatible endpoint
         foundry_url = current_app.config.get('FOUNDRY_BASE_URL', 'http://127.0.0.1:56831')
+        from api.helpers.foundry import is_foundry_available
+        ok, _ = is_foundry_available(foundry_url)
+        if not ok:
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'error': 'Foundry Local unreachable',
+                'message': 'Foundry Local is not accessible at the configured FOUNDRY_BASE_URL'
+            }), 503
         headers = {'Content-Type': 'application/json'}
         api_key = current_app.config.get('FOUNDRY_API_KEY')
         if api_key:
@@ -127,10 +137,35 @@ def send_message(conversation_id):
             'temperature': temperature
         }
 
-        response = requests.post(f'{foundry_url}/v1/chat/completions', json=payload, headers=headers, timeout=60)
+        print('Sending payload to Foundry chat:', payload)
+        try:
+            response = requests.post(f'{foundry_url}/v1/chat/completions', json=payload, headers=headers, timeout=60)
+        except requests.exceptions.RequestException as e:
+            print(f'Error contacting Foundry chat endpoint: {e}')
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'error': 'Foundry Local unreachable',
+                'message': str(e)
+            }), 503
 
+        # Robustly parse JSON result - Foundry instances sometimes return non-JSON or error text
+        result = None
+        print(f'Foundry chat response status: {response.status_code}, text: {response.text[:1200]}')
         if response.status_code == 200:
-            result = response.json()
+            try:
+                result = response.json()
+            except Exception as parse_err:
+                # Log parse error and return a helpful response
+                print(f"Failed to parse Foundry response JSON: {parse_err}")
+                print(f"Foundry stdout/text: {response.text[:1000]}")
+                db.session.rollback()
+                return jsonify({
+                    'success': False,
+                    'error': 'Foundry response parse error',
+                    'message': str(parse_err),
+                    'foundry_text': response.text
+                }), 500
             ai_response = result.get('choices', [{}])[0].get('message', {}).get('content', '')
 
             # Save AI response
@@ -151,7 +186,9 @@ def send_message(conversation_id):
                 'usage': result.get('usage', {})
             })
         else:
+            # Preserve response text for debugging
             db.session.rollback()
+            print(f"Foundry returned error status {response.status_code}: {response.text[:1000]}")
             return jsonify({
                 'success': False,
                 'error': f'AI response failed: {response.status_code}',
@@ -159,6 +196,8 @@ def send_message(conversation_id):
             }), response.status_code
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
         return jsonify({
             'success': False,

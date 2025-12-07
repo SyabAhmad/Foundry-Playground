@@ -18,6 +18,8 @@ def list_available_models():
             ["foundry", "model", "list"],
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=30
         )
         print(f"CLI return code: {result.returncode}")

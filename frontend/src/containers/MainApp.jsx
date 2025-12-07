@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { LeftSidebar, RightSidebar, ChatArea } from "../components";
 import api from "../api/api";
 
@@ -11,12 +11,13 @@ const MainApp = () => {
   const [models, setModels] = useState([]);
   const [availableModels, setAvailableModels] = useState([]);
   const [allModels, setAllModels] = useState([]);
+  const [runningModels, setRunningModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const userId = "demo-user";
 
-  const fetchModels = async () => {
+  const fetchModels = useCallback(async () => {
     try {
       const resp = await api.getModels();
       let modelsList =
@@ -24,6 +25,7 @@ const MainApp = () => {
       setModels(
         modelsList.map((m) => ({
           ...(typeof m === "string" ? { id: m, name: m } : m),
+          rawId: (typeof m === "string" ? m : m.id || m.name || "") || "",
           id: ((typeof m === "string" ? m : m.id || m.name || "") || "")
             .toString()
             .replace(/:/g, "-"),
@@ -45,7 +47,15 @@ const MainApp = () => {
           const id = (m.id || m.name || "") + "";
           return !downloadedIds.includes(id.replace(/:/g, "-"));
         });
-        setAvailableModels(filtered);
+        setAvailableModels(
+          filtered.map((m) => ({
+            ...(typeof m === "string" ? { id: m, name: m } : m),
+            rawId: (typeof m === "string" ? m : m.id || m.name || "") || "",
+            id: (
+              (typeof m === "string" ? m : m.id || m.name || "") || ""
+            ).replace(/:/g, "-"),
+          }))
+        );
         if (
           (!modelsList || modelsList.length === 0) &&
           pull.models.length > 0 &&
@@ -65,33 +75,55 @@ const MainApp = () => {
           setAllModels(
             allResp.models.map((m) => ({
               ...(typeof m === "string" ? { id: m, name: m } : m),
+              rawId: (typeof m === "string" ? m : m.id || m.name || "") || "",
               id: ((typeof m === "string" ? m : m.id || m.name || "") || "")
                 .toString()
                 .replace(/:/g, "-"),
             }))
           );
         } else setAllModels([]);
-      } catch (e) {
+      } catch (error) {
+        console.error("Error fetching all models:", error);
         setAllModels([]);
+      }
+      // fetch running models
+      try {
+        const runningResp = await api.getRunningModels();
+        if (runningResp.success && Array.isArray(runningResp.models)) {
+          setRunningModels(
+            runningResp.models.map((m) => ({
+              ...(typeof m === "string" ? { id: m, name: m } : m),
+              rawId: (typeof m === "string" ? m : m.id || m.name || "") || "",
+              id: ((typeof m === "string" ? m : m.id || m.name || "") || "")
+                .toString()
+                .replace(/:/g, "-"),
+            }))
+          );
+        } else {
+          setRunningModels([]);
+        }
+      } catch (error) {
+        console.error("Error fetching running models:", error);
+        setRunningModels([]);
       }
     } catch (err) {
       console.error("Error fetching models:", err);
     }
-  };
+  }, [selectedModel]);
 
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       const response = await api.getConversations(userId);
       if (response.success) setConversations(response.conversations);
     } catch (err) {
       console.error("Error loading conversations:", err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchModels();
     loadConversations();
-  }, []);
+  }, [fetchModels, loadConversations]);
 
   const saveConversation = async (conversation) => {
     try {
@@ -117,7 +149,10 @@ const MainApp = () => {
   // Rest of logic (selecting conv, sending messages, pulling models, etc.)
   const createNewConversation = async () => {
     if (currentConversation && messages.length === 0) return;
-    const newConversation = { title: "New Conversation", model: selectedModel };
+    const newConversation = {
+      title: "New Conversation",
+      model: getRawId(selectedModel),
+    };
     const saved = await saveConversation(newConversation);
     if (saved) {
       await loadConversations();
@@ -150,13 +185,23 @@ const MainApp = () => {
       if (data.success) {
         setCurrentConversation(data.conversation);
         setMessages(data.messages);
-        setSelectedModel(data.conversation.model_used || selectedModel);
+        if (data.conversation.model_used) {
+          handleModelSelect(
+            (data.conversation.model_used || selectedModel)
+              .toString()
+              .replace(/:/g, "-")
+          );
+        }
       }
     } catch (err) {
       console.error("Error loading conversation:", err);
       setCurrentConversation(conversation);
       setMessages(conversation.messages || []);
-      setSelectedModel(conversation.model || selectedModel);
+      if (conversation.model) {
+        handleModelSelect(
+          (conversation.model || selectedModel).toString().replace(/:/g, "-")
+        );
+      }
     }
   };
 
@@ -178,7 +223,7 @@ const MainApp = () => {
         await api.postConversationMessage(currentConversation.id, {
           role: "user",
           content: inputMessage,
-          model: selectedModel,
+          model: getRawId(selectedModel),
         });
       } catch (err) {
         console.error("Error saving user message:", err);
@@ -202,7 +247,7 @@ const MainApp = () => {
       const data = await api.chat(
         currentConversation ? currentConversation.id : null,
         {
-          model: selectedModel,
+          model: getRawId(selectedModel),
           messages: openaiMessages,
           max_tokens: 500,
           temperature: 0.7,
@@ -224,7 +269,7 @@ const MainApp = () => {
             await api.postConversationMessage(currentConversation.id, {
               role: "assistant",
               content: assistantContent,
-              model: selectedModel,
+              model: getRawId(selectedModel),
               tokens_used: data.usage?.total_tokens,
             });
           } catch (err) {
@@ -266,8 +311,9 @@ const MainApp = () => {
   };
 
   const handlePullModel = async (modelId) => {
+    const rawId = getRawId(modelId);
     try {
-      const response = await api.pullModel(modelId);
+      const response = await api.pullModel(rawId);
       if (response.success) {
         alert(`Model ${modelId} download started successfully!`);
         await fetchModels();
@@ -282,8 +328,9 @@ const MainApp = () => {
   };
 
   const handleStopModel = async (modelId) => {
+    const rawId = getRawId(modelId);
     try {
-      const response = await api.stopModel(modelId);
+      const response = await api.stopModel(rawId);
       if (response.success) {
         alert(`Model ${modelId} stopped successfully!`);
         await fetchModels();
@@ -293,6 +340,60 @@ const MainApp = () => {
       console.error("Error stopping model:", err);
       alert("Error stopping model");
     }
+  };
+
+  const handleModelSelect = async (modelId) => {
+    // modelId here is normalized UI id (dashes). Find rawId from any of the lists
+    const findModel = (list) =>
+      list &&
+      list.find(
+        (m) => ((m.id || m.name || m) + "").replace(/:/g, "-") === modelId + ""
+      );
+    const m1 =
+      findModel(models) || findModel(availableModels) || findModel(allModels);
+    const rawId = (m1 && (m1.rawId || m1.id || m1.name || m1)) || modelId;
+
+    // update selected model in UI
+    setSelectedModel((modelId || "").toString().replace(/:/g, "-"));
+
+    // start model (pull/run) using rawId if not already running
+    const isAlreadyRunning = runningModels.find(
+      (r) =>
+        ((r.id || r.rawId || r.name || "") + "").replace(/:/g, "-") ===
+        (rawId + "").replace(/:/g, "-")
+    );
+    if (isAlreadyRunning) {
+      console.log("Model already running:", rawId);
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const resp = await api.pullModel(rawId);
+      if (resp && resp.success) {
+        // refresh model lists and assume model is started
+        await fetchModels();
+      } else {
+        console.error("Failed to start model", resp);
+        // show message if desired
+      }
+    } catch (err) {
+      console.error("Error starting model:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getRawId = (norm) => {
+    const findModel = (list) =>
+      list &&
+      list.find(
+        (m) => ((m.id || m.name || m) + "").replace(/:/g, "-") === norm + ""
+      );
+    const modelObj =
+      findModel(models) || findModel(availableModels) || findModel(allModels);
+    if (modelObj)
+      return (modelObj.rawId || modelObj.id || modelObj.name || modelObj) + "";
+    return norm + "";
   };
 
   return (
@@ -318,7 +419,7 @@ const MainApp = () => {
           }
         }}
         selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
+        onModelChange={handleModelSelect}
         models={models}
         isLoading={isLoading}
         onSuggestionClick={(s) => setInputMessage(s)}
@@ -330,8 +431,9 @@ const MainApp = () => {
         downloadedModels={models}
         availableModels={availableModels}
         allModels={allModels}
+        runningModels={runningModels}
         selectedModel={selectedModel}
-        onModelSelect={setSelectedModel}
+        onModelSelect={handleModelSelect}
         showSidebar={showRightSidebar}
         onPullModel={handlePullModel}
         onStopModel={handleStopModel}

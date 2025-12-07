@@ -1,14 +1,13 @@
-# Deprecated: this file was replaced by pull_clean.py
-from flask import Blueprint
-
-bp = Blueprint('pull_model_deprecated', __name__)
 from flask import Blueprint, jsonify, request, current_app
 from models import db, AIModel
 
-bp = Blueprint('pull_model', __name__)
+bp = Blueprint('pull_model_clean', __name__)
+
+
 def _run_foundry_cmd(args, timeout=600):
     import subprocess
     return subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
+
 
 @bp.route('/pull/<model_id>', methods=['POST'])
 def pull_model(model_id):
@@ -30,6 +29,7 @@ def pull_model(model_id):
         db.session.rollback()
         current_app.logger.exception('pull_model error')
         return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @bp.route('/pull', methods=['GET'])
 def list_pullable_models():
@@ -71,10 +71,11 @@ def list_pullable_models():
                 'count': model_count
             }
             return jsonify(response_data)
-        return jsonify({'success': False, 'error': 'Failed'}), 500
+        return jsonify({'success': False, 'error': 'Failed to list pullable models', 'details': res.stderr}), 500
     except Exception as e:
         current_app.logger.exception('list_pullable_models error')
-    return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @bp.route('/all', methods=['GET'])
 def list_all_models():
@@ -90,7 +91,7 @@ def list_all_models():
                     continue
                 parsed.append({"id": parts[-1].replace(':', '-'), "name": parts[-1].replace(':', '-')})
             return jsonify({'success': True, 'models': parsed})
-        return jsonify({'success': False, 'error': 'Failed'}), 500
+        return jsonify({'success': False, 'error': 'Failed to list all models', 'details': res.stderr}), 500
     except Exception as e:
         current_app.logger.exception('list_all_models error')
-    return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
